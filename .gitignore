@@ -1,0 +1,43 @@
+# Dependencies
+**/node_modules/
+
+# Build outputs
+frontend-next/.next/
+frontend-next/out/
+frontend-next/dist/
+backend/dist/
+backend/build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Coverage / cache
+coverage/
+.nyc_output/
+**/.cache/
+
+# Runtime uploads and generated assets
+uploads/
+backend/uploads/
+
+# Misc
+*.pid
+*.seed
+
+# Root lockfile is accidental for this monorepo layout
+/package-lock.json
