@@ -167,7 +167,7 @@ const CreateDesign = () => {
             };
 
             // Prepare images to upload
-            const imagesToUpload: { image: string; folder: string }[] = [];
+            const imagesToUpload: { image: string; folder: string; type: 'render' | 'design' }[] = [];
             
             // Save current view state
             const originalView = viewSide;
@@ -178,16 +178,16 @@ const CreateDesign = () => {
                 await new Promise(r => setTimeout(r, 800)); // Wait for render
                 const frontCanvasImage = await captureCurrentView();
                 if (frontCanvasImage) {
-                    imagesToUpload.push({ image: frontCanvasImage, folder: 'products' });
+                    imagesToUpload.push({ image: frontCanvasImage, folder: 'products', type: 'render' });
                 }
                 // Also save the original design image - convert URL to base64 if needed
                 if (sides.front.image.startsWith('http')) {
                     const base64Image = await urlToBase64(sides.front.image);
                     if (base64Image) {
-                        imagesToUpload.push({ image: base64Image, folder: 'products' });
+                        imagesToUpload.push({ image: base64Image, folder: 'products', type: 'design' });
                     }
                 } else if (sides.front.image.startsWith('data:')) {
-                    imagesToUpload.push({ image: sides.front.image, folder: 'products' });
+                    imagesToUpload.push({ image: sides.front.image, folder: 'products', type: 'design' });
                 }
             }
 
@@ -197,16 +197,16 @@ const CreateDesign = () => {
                 await new Promise(r => setTimeout(r, 800)); // Wait for render
                 const backCanvasImage = await captureCurrentView();
                 if (backCanvasImage) {
-                    imagesToUpload.push({ image: backCanvasImage, folder: 'products' });
+                    imagesToUpload.push({ image: backCanvasImage, folder: 'products', type: 'render' });
                 }
                 // Also save the original design image - convert URL to base64 if needed
                 if (sides.back.image.startsWith('http')) {
                     const base64Image = await urlToBase64(sides.back.image);
                     if (base64Image) {
-                        imagesToUpload.push({ image: base64Image, folder: 'products' });
+                        imagesToUpload.push({ image: base64Image, folder: 'products', type: 'design' });
                     }
                 } else if (sides.back.image.startsWith('data:')) {
-                    imagesToUpload.push({ image: sides.back.image, folder: 'products' });
+                    imagesToUpload.push({ image: sides.back.image, folder: 'products', type: 'design' });
                 }
             }
 
@@ -256,13 +256,13 @@ const CreateDesign = () => {
             const renderUrls: string[] = [];
             const designUrls: string[] = [];
             
-            uploadData.uploads.forEach((upload: { imageUrl: string; key: string | null }) => {
-                if (upload.key?.includes('products')) {
-                    renderUrls.push(upload.imageUrl);
-                } else if (upload.key?.includes('products')) {
-                    designUrls.push(upload.imageUrl);
+            uploadData.uploads.forEach((upload: { imageUrl: string; key: string | null }, index: number) => {
+                const imgType = validImages[index]?.type;
+                if (imgType === 'render') {
+                    // Append query param to uniquely identify renders for the hover effect
+                    renderUrls.push(upload.imageUrl + '?type=render');
                 } else {
-                    renderUrls.push(upload.imageUrl);
+                    designUrls.push(upload.imageUrl);
                 }
             });
 

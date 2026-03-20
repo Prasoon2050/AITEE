@@ -16,10 +16,13 @@ const ProductCard = ({ product }: ProductCardProps) => {
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
     const [isHovered, setIsHovered] = React.useState(false);
 
-    // Use first image as default, fallback to 'image' field if 'images' array is empty/missing
-    const primaryImage = product.images?.[0] || product.image;
-    // Use second image for hover if available, otherwise keep primary
-    const secondaryImage = product.images?.[1] || primaryImage;
+    const renderImages = product.images?.filter((img) => img.includes('?type=render')) || [];
+    
+    // Use first render image as default, fallback to regular images array if empty, then 'image' field
+    const primaryImage = renderImages[0] || product.images?.[0] || product.image;
+    
+    // Use second render image for hover. If no second render image, stick to primary so we don't zoom into the raw artwork
+    const secondaryImage = renderImages[1] || primaryImage;
 
     const isWishlisted = isInWishlist(product._id || product.id!);
 
@@ -54,7 +57,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300" />
 
                 {/* Badge for multiple views if applicable */}
-                {product.images && product.images.length > 1 && (
+                {renderImages.length > 1 && (
                     <div className="absolute top-3 right-3 bg-white/80 backdrop-blur px-2 py-1 rounded-full text-[10px] font-bold text-gray-600 shadow-sm">
                         Front & Back
                     </div>
