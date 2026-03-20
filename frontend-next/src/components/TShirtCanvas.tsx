@@ -2,54 +2,62 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
+export interface CanvasElement {
+    id: string;
+    type: 'image' | 'text';
+    content: string;
+    position: [number, number]; // [x, y] in percentage from center. 0 = center
+    scale: number;
+    rotation?: number;
+    borderRadius?: number;
+    color?: string;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    underline?: boolean;
+}
+
 interface TShirtProps {
     color: string;
-    textureUrl: string | null;
-    decalPosition: [number, number, number];
-    decalScale: number;
+    elements: CanvasElement[];
+    selectedElementId: string | null;
     zoom?: number;
     viewSide?: 'front' | 'back';
-    onDecalPositionChange?: (pos: [number, number, number]) => void;
-    onDecalScaleChange?: (scale: number) => void;
+    onUpdateElement?: (id: string, updates: Partial<CanvasElement>) => void;
+    onSelectElement?: (id: string | null) => void;
+    onRemoveElement?: (id: string) => void;
     onZoomChange?: (zoom: number) => void;
-    onRemoveDesign?: () => void;
-    borderRadius?: number;
     onCapture?: (callback: () => Promise<string | null>) => void;
 }
 
 const TShirtCanvas = ({
     color,
-    textureUrl,
-    decalPosition,
-    decalScale,
+    elements,
+    selectedElementId,
     zoom = 1,
     viewSide = 'front',
-    onDecalPositionChange,
-    onDecalScaleChange,
+    onUpdateElement,
+    onSelectElement,
+    onRemoveElement,
     onZoomChange,
-    onRemoveDesign,
-    borderRadius = 0,
     onCapture
 }: TShirtProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const decalRef = useRef<HTMLDivElement>(null);
+    
+    // We use a ref map to track individual element DOM nodes for accurate resize distance
+    const elementsRef = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
-    const [isSelected, setIsSelected] = useState(false);
     const [startScale, setStartScale] = useState(0);
     const [startDist, setStartDist] = useState(0);
-
-    const leftPercent = 50 + (decalPosition[0] * 100);
-    const topPercent = 50 - (decalPosition[1] * 100);
 
     // Expose capture function via effect
     useEffect(() => {
         if (onCapture) {
             const captureCanvas = async (): Promise<string | null> => {
                 try {
-                    // Create an offscreen canvas at a good resolution (e.g. 1024x1365 matching 3:4 aspect)
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     if (!ctx) return null;
@@ -57,7 +65,6 @@ const TShirtCanvas = ({
                     canvas.width = 1000;
                     canvas.height = Math.round(1000 * (4 / 3)); // 1333px
 
-                    // Helper to load an image
                     const loadImage = (src: string): Promise<HTMLImageElement> => {
                         return new Promise((resolve, reject) => {
                             const img = new Image();
@@ -75,65 +82,93 @@ const TShirtCanvas = ({
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                     
                     const baseImg = await loadImage(tshirtSrc);
-                    // Draw base image covering the canvas (object-contain roughly)
-                    // The base images are likely already 3:4 or close
                     ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
-                    // 2. Apply the color using multiply blend mode if it's not white
+                    // 2. Apply color
                     if (color !== '#ffffff' && color !== 'white') {
-                        // To properly mask the color, we draw the shape again as a mask, 
-                        // then fill the color with multiply
                         ctx.globalCompositeOperation = 'source-atop';
                         ctx.fillStyle = color;
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
                         ctx.globalCompositeOperation = 'multiply';
                         ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
-                        ctx.globalCompositeOperation = 'source-over'; // reset
+                        ctx.globalCompositeOperation = 'source-over';
                     }
 
-                    // 3. Draw the user's design (decal) if present
-                    if (textureUrl) {
-                        const decalImg = await loadImage(textureUrl);
-                        
-                        // Calculate dimensions matching the CSS
-                        // In CSS: width: 100px on a container that is ~400px wide -> decal is ~25% of container width base
-                        // Then it's scaled by (decalScale * 3)
-                        const baseDecalWidthPercent = 0.25; 
-                        const decalWidth = canvas.width * baseDecalWidthPercent * (decalScale * 3);
-                        // Maintain aspect ratio of the uploaded image
-                        const decalHeight = decalWidth * (decalImg.height / decalImg.width);
+                    // 3. Draw elements
+                    // Sort elements backward if we need specific z-index, but we assume they are drawn in array order
+                    for (const el of elements) {
+                        const xPercent = 0.5 + el.position[0];
+                        const yPercent = 0.5 - el.position[1];
 
-                        // Position matching CSS
-                        // leftPercent = 50 + (decalPosition[0] * 100) -> 0 to 1 scaling
-                        const xPercent = 0.5 + decalPosition[0];
-                        const yPercent = 0.5 - decalPosition[1];
+                        ctx.save();
                         
-                        // translate(-50%, -50%) means it's centered on that coordinate
-                        const x = (canvas.width * xPercent) - (decalWidth / 2);
-                        const y = (canvas.height * yPercent) - (decalHeight / 2);
+                        // Move to element center
+                        const centerX = canvas.width * xPercent;
+                        const centerY = canvas.height * yPercent;
+                        ctx.translate(centerX, centerY);
 
-                        // Handle border radius if applicable
-                        if (borderRadius > 0) {
-                            ctx.save();
-                            ctx.beginPath();
-                            const radiusMatch = decalWidth * (borderRadius / 100);
-                            // Simple rounded rect clipping
-                            ctx.moveTo(x + radiusMatch, y);
-                            ctx.lineTo(x + decalWidth - radiusMatch, y);
-                            ctx.quadraticCurveTo(x + decalWidth, y, x + decalWidth, y + radiusMatch);
-                            ctx.lineTo(x + decalWidth, y + decalHeight - radiusMatch);
-                            ctx.quadraticCurveTo(x + decalWidth, y + decalHeight, x + decalWidth - radiusMatch, y + decalHeight);
-                            ctx.lineTo(x + radiusMatch, y + decalHeight);
-                            ctx.quadraticCurveTo(x, y + decalHeight, x, y + decalHeight - radiusMatch);
-                            ctx.lineTo(x, y + radiusMatch);
-                            ctx.quadraticCurveTo(x, y, x + radiusMatch, y);
-                            ctx.closePath();
-                            ctx.clip();
-                            ctx.drawImage(decalImg, x, y, decalWidth, decalHeight);
-                            ctx.restore();
-                        } else {
-                            ctx.drawImage(decalImg, x, y, decalWidth, decalHeight);
+                        if (el.rotation) {
+                            ctx.rotate(el.rotation * Math.PI / 180);
                         }
+
+                        if (el.type === 'image' && el.content) {
+                            const decalImg = await loadImage(el.content);
+                            // Base decal width logic matches original CSS (25% of container width * scale * 3)
+                            const baseDecalWidthPercent = 0.25; 
+                            const decalWidth = canvas.width * baseDecalWidthPercent * (el.scale * 3);
+                            const decalHeight = decalWidth * (decalImg.height / decalImg.width);
+
+                            const x = -decalWidth / 2;
+                            const y = -decalHeight / 2;
+
+                            const borderRadius = el.borderRadius || 0;
+                            if (borderRadius > 0) {
+                                ctx.beginPath();
+                                const radiusMatch = decalWidth * (borderRadius / 100);
+                                ctx.moveTo(x + radiusMatch, y);
+                                ctx.lineTo(x + decalWidth - radiusMatch, y);
+                                ctx.quadraticCurveTo(x + decalWidth, y, x + decalWidth, y + radiusMatch);
+                                ctx.lineTo(x + decalWidth, y + decalHeight - radiusMatch);
+                                ctx.quadraticCurveTo(x + decalWidth, y + decalHeight, x + decalWidth - radiusMatch, y + decalHeight);
+                                ctx.lineTo(x + radiusMatch, y + decalHeight);
+                                ctx.quadraticCurveTo(x, y + decalHeight, x, y + decalHeight - radiusMatch);
+                                ctx.lineTo(x, y + radiusMatch);
+                                ctx.quadraticCurveTo(x, y, x + radiusMatch, y);
+                                ctx.closePath();
+                                ctx.clip();
+                            }
+                            ctx.drawImage(decalImg, x, y, decalWidth, decalHeight);
+                        } else if (el.type === 'text' && el.content) {
+                            ctx.fillStyle = el.color || '#000000';
+                            
+                            const fontStyle = el.fontStyle === 'italic' ? 'italic ' : 'normal ';
+                            const fontWeight = el.fontWeight === 'bold' ? 'bold ' : 'normal ';
+                            
+                            // To match CSS `33px * scale * 3` inside a ~400px container...
+                            // Actually the container is canvas.width. 
+                            // 33px in a 400px box is ~8.25%.
+                            const fontSize = canvas.width * 0.0825 * (el.scale * 3);
+                            const fontFamily = el.fontFamily || 'Arial';
+                            
+                            ctx.font = `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            
+                            ctx.fillText(el.content, 0, 0);
+                            
+                            if (el.underline) {
+                                const metrics = ctx.measureText(el.content);
+                                const textWidth = metrics.width;
+                                ctx.beginPath();
+                                ctx.moveTo(-textWidth/2, fontSize / 2 + 2);
+                                ctx.lineTo(textWidth/2, fontSize / 2 + 2);
+                                ctx.strokeStyle = el.color || '#000000';
+                                ctx.lineWidth = Math.max(2, fontSize / 15);
+                                ctx.stroke();
+                            }
+                        }
+
+                        ctx.restore();
                     }
 
                     return canvas.toDataURL('image/png', 0.9);
@@ -145,35 +180,29 @@ const TShirtCanvas = ({
             
             onCapture(captureCanvas);
         }
-    }, [onCapture, viewSide, color, textureUrl, decalPosition, decalScale, borderRadius]);
+    }, [onCapture, viewSide, color, elements]);
 
-    // Deselect when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                setIsSelected(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+    // Removed handleClickOutside useEffect to prevent deselection when clicking UI controls
 
     // Handle Delete Key
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (isSelected && (e.key === 'Delete' || e.key === 'Backspace')) {
-                if (onRemoveDesign) {
-                    onRemoveDesign();
-                    setIsSelected(false);
+            if (selectedElementId && (e.key === 'Delete' || e.key === 'Backspace')) {
+                // Prevent deleting if user is typing in an input
+                if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                    return;
+                }
+                if (onRemoveElement) {
+                    onRemoveElement(selectedElementId);
                 }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isSelected, onRemoveDesign]);
+    }, [selectedElementId, onRemoveElement]);
 
-    // Handle Wheel Zoom with preventDefault to stop page scroll
+    // Handle Wheel Zoom
     useEffect(() => {
         const wrapper = wrapperRef.current;
         if (!wrapper) return;
@@ -188,33 +217,38 @@ const TShirtCanvas = ({
         };
 
         wrapper.addEventListener('wheel', handleWheel, { passive: false });
-        return () => {
-            wrapper.removeEventListener('wheel', handleWheel);
-        };
+        // eslint-disable-next-line consistent-return
+        return () => wrapper.removeEventListener('wheel', handleWheel);
     }, [zoom, onZoomChange]);
 
-    const handlePointerDown = (e: React.PointerEvent) => {
+    const handlePointerDown = (e: React.PointerEvent, id: string) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!textureUrl) return;
+        if (onSelectElement) onSelectElement(id);
         setIsDragging(true);
-        setIsSelected(true);
         e.currentTarget.setPointerCapture(e.pointerId);
     };
 
-    const handleResizeStart = (e: React.PointerEvent) => {
+    const handleResizeStart = (e: React.PointerEvent, id: string) => {
         e.preventDefault();
         e.stopPropagation();
+        if (onSelectElement) onSelectElement(id);
         setIsResizing(true);
-        setStartScale(decalScale);
 
-        // Calculate initial distance from center of decal
-        if (decalRef.current) {
-            const rect = decalRef.current.getBoundingClientRect();
+        const el = elements.find(e => e.id === id);
+        if (el) {
+            setStartScale(el.scale);
+        }
+
+        const elRef = elementsRef.current[id];
+        if (elRef) {
+            const rect = elRef.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const dist = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
             setStartDist(dist);
+        } else {
+            setStartDist(100);
         }
 
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -227,16 +261,13 @@ const TShirtCanvas = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || !selectedElementId) return;
 
-        if (isDragging && onDecalPositionChange && !isResizing) {
+        const selEl = elements.find(el => el.id === selectedElementId);
+        if (!selEl) return;
+
+        if (isDragging && onUpdateElement && !isResizing) {
             const rect = containerRef.current.getBoundingClientRect();
-
-            // Adjust for Zoom: The rect is scaled visually, but we need calculation relative to unscaled dimensions if possible,
-            // or just use the visual dimensions and standard percentage logic.
-            // Since `zoom` scales the parent, `rect` dimensions usually scale too.
-            // Percentage logic remains: (x / width) * 100.
-
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
@@ -246,32 +277,31 @@ const TShirtCanvas = ({
             const x3d = (xPercent - 50) / 100;
             const y3d = (50 - yPercent) / 100;
 
-            onDecalPositionChange([x3d, y3d, decalPosition[2]]);
+            onUpdateElement(selectedElementId, { position: [x3d, y3d] });
         }
 
-        if (isResizing && onDecalScaleChange && decalRef.current) {
-            const rect = decalRef.current.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const currentDist = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
+        if (isResizing && onUpdateElement && startDist > 0) {
+            const elRef = elementsRef.current[selectedElementId];
+            if (elRef) {
+                const rect = elRef.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const currentDist = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
 
-            // New Scale = StartScale * (CurrentDist / StartDist)
-            const newScale = startScale * (currentDist / startDist);
-
-            // Limit scale to reasonable bounds
-            const clampedScale = Math.max(0.1, Math.min(newScale, 2.0));
-            onDecalScaleChange(clampedScale);
+                const newScale = startScale * (currentDist / startDist);
+                const clampedScale = Math.max(0.05, Math.min(newScale, 3.0));
+                onUpdateElement(selectedElementId, { scale: clampedScale });
+            }
         }
     };
 
-    // Handle styles for resize handles
-    const handleStyle = {
+    const handleStyle: React.CSSProperties = {
         width: '12px',
         height: '12px',
         backgroundColor: 'white',
         border: '1px solid #4f46e5',
         borderRadius: '50%',
-        position: 'absolute' as 'absolute',
+        position: 'absolute',
         zIndex: 20
     };
 
@@ -282,7 +312,6 @@ const TShirtCanvas = ({
             ref={wrapperRef}
             className="w-full h-full bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center relative select-none touch-none"
         >
-            {/* T-Shirt Container with Zoom Transform */}
             <div
                 ref={containerRef}
                 className="relative w-[80%] max-w-[400px] aspect-[3/4]"
@@ -290,11 +319,6 @@ const TShirtCanvas = ({
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerUp}
-                onClick={(e) => {
-                    if (e.target === containerRef.current) {
-                        setIsSelected(false);
-                    }
-                }}
             >
                 {/* Base T-Shirt Image */}
                 <div className="absolute inset-0 w-full h-full">
@@ -321,61 +345,85 @@ const TShirtCanvas = ({
                     />
                 </div>
 
-                {/* Decal Overlay */}
-                {textureUrl && (
-                    <div
-                        ref={decalRef}
-                        className={`absolute cursor-move ${isSelected ? 'ring-1 ring-indigo-500' : ''}`}
-                        style={{
-                            left: `${leftPercent}%`,
-                            top: `${topPercent}%`,
-                            transform: `translate(-50%, -50%) scale(${decalScale * 3})`,
-                            width: '100px',
-                            height: '100px',
-                            touchAction: 'none',
-                            borderRadius: `${borderRadius}%`,
-                            overflow: 'hidden'
-                        }}
-                        onPointerDown={handlePointerDown}
-                    >
-                        <img
-                            src={textureUrl}
-                            alt="Decal"
-                            className="w-full h-full object-contain pointer-events-none"
-                            style={{ borderRadius: `${borderRadius}%` }}
-                        />
+                {/* Elements */}
+                {elements.map((el) => {
+                    const isSelected = selectedElementId === el.id;
+                    const leftPercent = 50 + (el.position[0] * 100);
+                    const topPercent = 50 - (el.position[1] * 100);
 
-                        {/* Resize Handles - Only visible when selected */}
-                        {isSelected && (
-                            <>
-                                {/* Top Left */}
-                                <div
-                                    className="resize-handle exclude-capture"
-                                    style={{ ...handleStyle, top: '-6px', left: '-6px', cursor: 'nwse-resize' }}
-                                    onPointerDown={handleResizeStart}
+                    return (
+                        <div
+                            key={el.id}
+                            ref={(node) => { elementsRef.current[el.id] = node; }}
+                            className={`absolute cursor-move ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-transparent' : ''}`}
+                            style={{
+                                left: `${leftPercent}%`,
+                                top: `${topPercent}%`,
+                                transform: `translate(-50%, -50%) scale(${el.scale * 3}) rotate(${el.rotation || 0}deg)`,
+                                width: el.type === 'text' ? 'auto' : '100px',
+                                height: el.type === 'text' ? 'auto' : '100px',
+                                whiteSpace: 'nowrap',
+                                touchAction: 'none',
+                                borderRadius: el.type === 'image' && el.borderRadius ? `${el.borderRadius}%` : '0',
+                                zIndex: isSelected ? 10 : 1
+                            }}
+                            onPointerDown={(e) => handlePointerDown(e, el.id)}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {el.type === 'image' && el.content && (
+                                <img
+                                    src={el.content}
+                                    alt="Decal"
+                                    className="w-full h-full object-contain pointer-events-none"
+                                    style={{ borderRadius: el.borderRadius ? `${el.borderRadius}%` : '0' }}
                                 />
-                                {/* Top Right */}
+                            )}
+                            
+                            {el.type === 'text' && el.content && (
                                 <div
-                                    className="resize-handle exclude-capture"
-                                    style={{ ...handleStyle, top: '-6px', right: '-6px', cursor: 'nesw-resize' }}
-                                    onPointerDown={handleResizeStart}
-                                />
-                                {/* Bottom Left */}
-                                <div
-                                    className="resize-handle exclude-capture"
-                                    style={{ ...handleStyle, bottom: '-6px', left: '-6px', cursor: 'nesw-resize' }}
-                                    onPointerDown={handleResizeStart}
-                                />
-                                {/* Bottom Right */}
-                                <div
-                                    className="resize-handle exclude-capture"
-                                    style={{ ...handleStyle, bottom: '-6px', right: '-6px', cursor: 'nwse-resize' }}
-                                    onPointerDown={handleResizeStart}
-                                />
-                            </>
-                        )}
-                    </div>
-                )}
+                                    className="pointer-events-none"
+                                    style={{
+                                        color: el.color || '#000000',
+                                        fontFamily: el.fontFamily || 'Arial',
+                                        fontWeight: el.fontWeight || 'normal',
+                                        fontStyle: el.fontStyle || 'normal',
+                                        textDecoration: el.underline ? 'underline' : 'none',
+                                        fontSize: `33px`,
+                                        padding: '4px 8px'
+                                    }}
+                                >
+                                    {el.content}
+                                </div>
+                            )}
+
+                            {/* Handles */}
+                            {isSelected && (
+                                <>
+                                    <div
+                                        className="resize-handle exclude-capture"
+                                        style={{ ...handleStyle, top: '-6px', left: '-6px', cursor: 'nwse-resize' }}
+                                        onPointerDown={(e) => handleResizeStart(e, el.id)}
+                                    />
+                                    <div
+                                        className="resize-handle exclude-capture"
+                                        style={{ ...handleStyle, top: '-6px', right: '-6px', cursor: 'nesw-resize' }}
+                                        onPointerDown={(e) => handleResizeStart(e, el.id)}
+                                    />
+                                    <div
+                                        className="resize-handle exclude-capture"
+                                        style={{ ...handleStyle, bottom: '-6px', left: '-6px', cursor: 'nesw-resize' }}
+                                        onPointerDown={(e) => handleResizeStart(e, el.id)}
+                                    />
+                                    <div
+                                        className="resize-handle exclude-capture"
+                                        style={{ ...handleStyle, bottom: '-6px', right: '-6px', cursor: 'nwse-resize' }}
+                                        onPointerDown={(e) => handleResizeStart(e, el.id)}
+                                    />
+                                </>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
 
             <div className="absolute bottom-4 left-4 text-xs text-gray-400 exclude-capture">
