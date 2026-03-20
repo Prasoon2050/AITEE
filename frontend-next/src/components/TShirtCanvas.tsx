@@ -46,57 +46,106 @@ const TShirtCanvas = ({
 
     // Expose capture function via effect
     useEffect(() => {
-        if (onCapture && containerRef.current) {
+        if (onCapture) {
             const captureCanvas = async (): Promise<string | null> => {
-                const element = containerRef.current;
-                if (!element) return null;
-
                 try {
-                    // We need to dynamically import html2canvas to avoid SSR issues
-                    const html2canvas = (await import('html2canvas')).default;
+                    // Create an offscreen canvas at a good resolution (e.g. 1024x1365 matching 3:4 aspect)
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return null;
 
-                    // Temporarily hide selection UI for clean capture
-                    const wasSelected = isSelected;
-                    setIsSelected(false);
+                    canvas.width = 1000;
+                    canvas.height = Math.round(1000 * (4 / 3)); // 1333px
+
+                    // Helper to load an image
+                    const loadImage = (src: string): Promise<HTMLImageElement> => {
+                        return new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.crossOrigin = 'anonymous';
+                            img.onload = () => resolve(img);
+                            img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+                            img.src = src;
+                        });
+                    };
+
+                    const tshirtSrc = viewSide === 'front' ? '/tshirt-base.png' : '/tshirt-back-base.png';
                     
-                    // Wait for state update to reflect in DOM
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                    // 1. Draw base t-shirt with light background
+                    ctx.fillStyle = '#f3f4f6';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    const baseImg = await loadImage(tshirtSrc);
+                    // Draw base image covering the canvas (object-contain roughly)
+                    // The base images are likely already 3:4 or close
+                    ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
-                    const canvas = await html2canvas(element, {
-                        backgroundColor: '#f3f4f6', // Light gray background
-                        scale: 2,
-                        logging: false,
-                        useCORS: true,
-                        allowTaint: true,
-                        foreignObjectRendering: false,
-                        removeContainer: true,
-                        ignoreElements: (el) => {
-                            // Exclude resize handles and selection indicators
-                            return el.classList.contains('exclude-capture') || 
-                                   el.classList.contains('resize-handle');
-                        },
-                        onclone: (clonedDoc) => {
-                            // Remove any problematic CSS that html2canvas can't handle
-                            const style = clonedDoc.createElement('style');
-                            style.textContent = '* { color: inherit !important; }';
-                            clonedDoc.head.appendChild(style);
-                        }
-                    });
-
-                    // Restore selection state
-                    if (wasSelected) {
-                        setIsSelected(true);
+                    // 2. Apply the color using multiply blend mode if it's not white
+                    if (color !== '#ffffff' && color !== 'white') {
+                        // To properly mask the color, we draw the shape again as a mask, 
+                        // then fill the color with multiply
+                        ctx.globalCompositeOperation = 'source-atop';
+                        ctx.fillStyle = color;
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.globalCompositeOperation = 'multiply';
+                        ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+                        ctx.globalCompositeOperation = 'source-over'; // reset
                     }
 
-                    return canvas.toDataURL('image/png');
+                    // 3. Draw the user's design (decal) if present
+                    if (textureUrl) {
+                        const decalImg = await loadImage(textureUrl);
+                        
+                        // Calculate dimensions matching the CSS
+                        // In CSS: width: 100px on a container that is ~400px wide -> decal is ~25% of container width base
+                        // Then it's scaled by (decalScale * 3)
+                        const baseDecalWidthPercent = 0.25; 
+                        const decalWidth = canvas.width * baseDecalWidthPercent * (decalScale * 3);
+                        // Maintain aspect ratio of the uploaded image
+                        const decalHeight = decalWidth * (decalImg.height / decalImg.width);
+
+                        // Position matching CSS
+                        // leftPercent = 50 + (decalPosition[0] * 100) -> 0 to 1 scaling
+                        const xPercent = 0.5 + decalPosition[0];
+                        const yPercent = 0.5 - decalPosition[1];
+                        
+                        // translate(-50%, -50%) means it's centered on that coordinate
+                        const x = (canvas.width * xPercent) - (decalWidth / 2);
+                        const y = (canvas.height * yPercent) - (decalHeight / 2);
+
+                        // Handle border radius if applicable
+                        if (borderRadius > 0) {
+                            ctx.save();
+                            ctx.beginPath();
+                            const radiusMatch = decalWidth * (borderRadius / 100);
+                            // Simple rounded rect clipping
+                            ctx.moveTo(x + radiusMatch, y);
+                            ctx.lineTo(x + decalWidth - radiusMatch, y);
+                            ctx.quadraticCurveTo(x + decalWidth, y, x + decalWidth, y + radiusMatch);
+                            ctx.lineTo(x + decalWidth, y + decalHeight - radiusMatch);
+                            ctx.quadraticCurveTo(x + decalWidth, y + decalHeight, x + decalWidth - radiusMatch, y + decalHeight);
+                            ctx.lineTo(x + radiusMatch, y + decalHeight);
+                            ctx.quadraticCurveTo(x, y + decalHeight, x, y + decalHeight - radiusMatch);
+                            ctx.lineTo(x, y + radiusMatch);
+                            ctx.quadraticCurveTo(x, y, x + radiusMatch, y);
+                            ctx.closePath();
+                            ctx.clip();
+                            ctx.drawImage(decalImg, x, y, decalWidth, decalHeight);
+                            ctx.restore();
+                        } else {
+                            ctx.drawImage(decalImg, x, y, decalWidth, decalHeight);
+                        }
+                    }
+
+                    return canvas.toDataURL('image/png', 0.9);
                 } catch (error) {
-                    console.error("Capture failed", error);
+                    console.error("Manual canvas capture failed", error);
                     return null;
                 }
             };
+            
             onCapture(captureCanvas);
         }
-    }, [onCapture, isSelected]);
+    }, [onCapture, viewSide, color, textureUrl, decalPosition, decalScale, borderRadius]);
 
     // Deselect when clicking outside
     useEffect(() => {

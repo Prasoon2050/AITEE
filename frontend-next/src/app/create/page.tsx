@@ -178,16 +178,16 @@ const CreateDesign = () => {
                 await new Promise(r => setTimeout(r, 800)); // Wait for render
                 const frontCanvasImage = await captureCurrentView();
                 if (frontCanvasImage) {
-                    imagesToUpload.push({ image: frontCanvasImage, folder: 'tshirt-renders' });
+                    imagesToUpload.push({ image: frontCanvasImage, folder: 'products' });
                 }
                 // Also save the original design image - convert URL to base64 if needed
                 if (sides.front.image.startsWith('http')) {
                     const base64Image = await urlToBase64(sides.front.image);
                     if (base64Image) {
-                        imagesToUpload.push({ image: base64Image, folder: 'original-designs' });
+                        imagesToUpload.push({ image: base64Image, folder: 'products' });
                     }
                 } else if (sides.front.image.startsWith('data:')) {
-                    imagesToUpload.push({ image: sides.front.image, folder: 'original-designs' });
+                    imagesToUpload.push({ image: sides.front.image, folder: 'products' });
                 }
             }
 
@@ -197,16 +197,16 @@ const CreateDesign = () => {
                 await new Promise(r => setTimeout(r, 800)); // Wait for render
                 const backCanvasImage = await captureCurrentView();
                 if (backCanvasImage) {
-                    imagesToUpload.push({ image: backCanvasImage, folder: 'tshirt-renders' });
+                    imagesToUpload.push({ image: backCanvasImage, folder: 'products' });
                 }
                 // Also save the original design image - convert URL to base64 if needed
                 if (sides.back.image.startsWith('http')) {
                     const base64Image = await urlToBase64(sides.back.image);
                     if (base64Image) {
-                        imagesToUpload.push({ image: base64Image, folder: 'original-designs' });
+                        imagesToUpload.push({ image: base64Image, folder: 'products' });
                     }
                 } else if (sides.back.image.startsWith('data:')) {
-                    imagesToUpload.push({ image: sides.back.image, folder: 'original-designs' });
+                    imagesToUpload.push({ image: sides.back.image, folder: 'products' });
                 }
             }
 
@@ -257,9 +257,9 @@ const CreateDesign = () => {
             const designUrls: string[] = [];
             
             uploadData.uploads.forEach((upload: { imageUrl: string; key: string | null }) => {
-                if (upload.key?.includes('tshirt-renders')) {
+                if (upload.key?.includes('products')) {
                     renderUrls.push(upload.imageUrl);
-                } else if (upload.key?.includes('original-designs')) {
+                } else if (upload.key?.includes('products')) {
                     designUrls.push(upload.imageUrl);
                 } else {
                     renderUrls.push(upload.imageUrl);
