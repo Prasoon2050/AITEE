@@ -1,7 +1,62 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
+const s3 = require('../config/s3');
 const { protect, admin } = require('../middleware/authMiddleware');
+
+const getS3ObjectKey = (imageValue) => {
+  if (typeof imageValue !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = imageValue.trim();
+
+  if (!trimmedValue || trimmedValue.startsWith('data:')) {
+    return null;
+  }
+
+  if (!trimmedValue.startsWith('http://') && !trimmedValue.startsWith('https://')) {
+    return trimmedValue.startsWith('/') ? null : trimmedValue;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(trimmedValue);
+  } catch (error) {
+    console.error(`Invalid image URL "${trimmedValue}" while deleting product`, error);
+    return null;
+  }
+
+  const bucketName = process.env.AWS_BUCKET_NAME;
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+
+  if (!pathSegments.length) {
+    return null;
+  }
+
+  if (bucketName && hostname.startsWith(`${bucketName.toLowerCase()}.s3`)) {
+    return pathSegments.join('/');
+  }
+
+  if (hostname.endsWith('.s3.amazonaws.com') || hostname.includes('.s3.')) {
+    return pathSegments.join('/');
+  }
+
+  if (hostname === 's3.amazonaws.com' || hostname.startsWith('s3.')) {
+    if (pathSegments.length < 2) {
+      return null;
+    }
+
+    if (bucketName && pathSegments[0] !== bucketName) {
+      return null;
+    }
+
+    return pathSegments.slice(1).join('/');
+  }
+
+  return null;
+};
 
 // @route   GET /api/products
 // @desc    Get all products
@@ -124,6 +179,30 @@ router.delete('/:id', protect, admin, async (req, res) => {
     const product = await Product.findById(req.params.id);
 
     if (product) {
+      const imageValues = [product.image, ...(Array.isArray(product.images) ? product.images : [])];
+      const imageKeys = [...new Set(imageValues.map(getS3ObjectKey).filter(Boolean))];
+
+      if (imageKeys.length > 0) {
+        const bucketName = process.env.AWS_BUCKET_NAME;
+
+        if (!bucketName) {
+          return res.status(500).json({ message: 'AWS bucket not configured. Unable to remove product images.' });
+        }
+
+        await Promise.all(
+          imageKeys.map(async (key) => {
+            try {
+              await s3.deleteObject({ Bucket: bucketName, Key: key }).promise();
+            } catch (s3Error) {
+              if (s3Error.code === 'NoSuchKey') {
+                return;
+              }
+              throw s3Error;
+            }
+          })
+        );
+      }
+
       await Product.deleteOne({ _id: req.params.id });
       res.json({ message: 'Product removed' });
     } else {

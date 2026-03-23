@@ -22,7 +22,7 @@ export default function AdminOrderDetails() {
             if (!token || !id) return;
             try {
                 const config = { headers: { Authorization: `Bearer ${token}` } };
-                const { data } = await axios.get(`http://localhost:5000/api/orders/${id}`, config);
+                const { data } = await axios.get(`http://localhost:5001/api/orders/${id}`, config);
                 setOrder(data);
                 setLoading(false);
             } catch (error) {
@@ -37,9 +37,9 @@ export default function AdminOrderDetails() {
     const deliverHandler = async () => {
         try {
             const config = { headers: { Authorization: `Bearer ${token}` } };
-            await axios.put(`http://localhost:5000/api/orders/${id}/deliver`, {}, config);
+            await axios.put(`http://localhost:5001/api/orders/${id}/deliver`, {}, config);
             // Refresh
-            const { data } = await axios.get(`http://localhost:5000/api/orders/${id}`, config);
+            const { data } = await axios.get(`http://localhost:5001/api/orders/${id}`, config);
             setOrder(data);
         } catch (error) {
             console.error("Error updating order to delivered", error);

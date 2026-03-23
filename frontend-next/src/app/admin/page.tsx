@@ -23,11 +23,11 @@ export default function AdminDashboard() {
                 const config = { headers: { Authorization: `Bearer ${token}` } };
 
                 // Fetch Orders
-                const { data: orders } = await axios.get('http://localhost:5000/api/orders', config);
+                const { data: orders } = await axios.get('http://localhost:5001/api/orders', config);
                 const totalSales = orders.reduce((acc: any, order: any) => acc + (order.isPaid ? order.totalPrice : 0), 0);
 
                 // Fetch Products
-                const { data: products } = await axios.get('http://localhost:5000/api/products');
+                const { data: products } = await axios.get('http://localhost:5001/api/products');
 
                 setStats({
                     totalSales,
