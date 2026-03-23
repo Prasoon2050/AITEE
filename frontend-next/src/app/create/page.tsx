@@ -206,7 +206,7 @@ const CreateDesign = () => {
                 return;
             }
 
-            const API_URL = 'http://localhost:5001/api';
+            const API_URL = 'https://aitee-backend.vercel.app/api';
 
             const urlToBase64 = async (url: string): Promise<string | null> => {
                 try {

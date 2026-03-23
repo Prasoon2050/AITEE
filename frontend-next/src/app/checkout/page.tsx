@@ -74,7 +74,7 @@ const Checkout = () => {
                 totalPrice: total,
             };
 
-            await axios.post('http://localhost:5001/api/orders', orderData, config);
+            await axios.post('https://aitee-backend.vercel.app/api/orders', orderData, config);
 
             setOrderPlaced(true);
             clearCart();

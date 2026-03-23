@@ -17,7 +17,7 @@ const OrdersTab = ({ token }: { token?: string }) => {
             }
             try {
                 const config = { headers: { Authorization: `Bearer ${token}` } };
-                const { data } = await axios.get('http://localhost:5001/api/orders/myorders', config);
+                const { data } = await axios.get('https://aitee-backend.vercel.app/api/orders/myorders', config);
                 setOrders(data);
             } catch (error) {
                 console.error("Failed to fetch orders", error);

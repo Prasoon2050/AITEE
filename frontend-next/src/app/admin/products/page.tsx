@@ -14,7 +14,7 @@ export default function AdminProducts() {
 
     const fetchProducts = async () => {
         try {
-            const { data } = await axios.get('http://localhost:5001/api/products');
+            const { data } = await axios.get('https://aitee-backend.vercel.app/api/products');
             setProducts(data);
             setLoading(false);
         } catch (error) {
@@ -31,7 +31,7 @@ export default function AdminProducts() {
         if (window.confirm('Are you sure you want to delete this product?')) {
             try {
                 const config = { headers: { Authorization: `Bearer ${token}` } };
-                await axios.delete(`http://localhost:5001/api/products/${id}`, config);
+                await axios.delete(`https://aitee-backend.vercel.app/api/products/${id}`, config);
                 fetchProducts();
             } catch (error) {
                 console.error("Error deleting product", error);

@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5001/api';
+const API_URL = 'https://aitee-backend.vercel.app/api';
 
 export const fetchProducts = async () => {
     const res = await fetch(`${API_URL}/products`);

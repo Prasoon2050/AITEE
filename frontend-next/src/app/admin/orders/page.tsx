@@ -16,7 +16,7 @@ export default function AdminOrders() {
             if (!token) return;
             try {
                 const config = { headers: { Authorization: `Bearer ${token}` } };
-                const { data } = await axios.get('http://localhost:5001/api/orders', config);
+                const { data } = await axios.get('https://aitee-backend.vercel.app/api/orders', config);
                 setOrders(data);
                 setLoading(false);
             } catch (error) {
